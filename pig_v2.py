@@ -12,7 +12,7 @@ import time
 parser = argparse.ArgumentParser()
 parser.add_argument('--player1', help='human or computer')
 parser.add_argument('--player2', help='human or computer')
-parser.add_argument('--timed', help='60sec timer')
+parser.add_argument('--timed', help='60sec timer, yes or no')
 args = parser.parse_args()
 
 
@@ -42,24 +42,23 @@ class Computer(Player):
         self.name = 'Computer'
 
     def ask(self, turnScore):
-        '''Computer decision engine executed when a human
-        would be asked to roll/hold'''
+        '''
+        Computer decision engine
+        '''
         y = 100 - self.score
-        if y < 20:
+        if y < 25:
             compare = y
         else:
-            compare = 20
+            compare = 25
 
         if turnScore > compare:
             return "h"
         else:
+            time.sleep(.5)
             return "r"
 
 
 class Human(Player):
-    def __init__(self):
-        super(Human, self).__init__()
-        # self.name = 'Player'
 
     def ask(self, turnScore):
         '''User input to decide whether to roll or hold. Returns T/F'''
@@ -82,43 +81,24 @@ class PlayerFactory(object):
             return Human()
 
 
-# class TimedGameProxy(Game):
-#     def __init__(self):
-#         self.start = time.time()
-
-#     def gameTimer(self):
-#         currTime = time.time()
-
-#         if currTime - self.start >= 60:
-            
-
-
-
 class Game(object):
-    def __init__(self):
-        self.playerIdx = 0
+    def __init__(self, players=[]):
+        # self.playerIdx = 0
         self.turnScore = 0
         self.players = []
         self.dice = Dice()
         fac = PlayerFactory()
 
-        player=fac.getPlayer(args.player1)
-        player.name = '#1: ' + player.name
-        self.players.append(player)
+        for player in players:
+            self.players.append(fac.getPlayer(player))
 
-        player=fac.getPlayer(args.player2)
-        player.name = '#2: ' + player.name
-        self.players.append(player)
-
+        self.playerIdx = random.randint(0, len(self.players) - 1)
         self.currentPlayer = self.players[self.playerIdx]
 
 
     def ask(self):
-        choice = self.currentPlayer.ask(self.turnScore)
-        if choice == 'r':
-            return True
-        elif choice == 'h':
-            return False
+        '''Passes off to the ask def in the player classes'''
+        return self.currentPlayer.ask(self.turnScore)
 
 
     def maxScore(self):
@@ -132,7 +112,8 @@ class Game(object):
 
 
     def changePlayer(self):
-        self.playerIdx = (self.playerIdx + 1) % 2
+        '''Switches between players'''
+        self.playerIdx = (self.playerIdx + 1) % len(self.players)
         self.turnScore = 0
         self.currentPlayer = self.players[self.playerIdx]
 
@@ -141,50 +122,116 @@ class Game(object):
         '''Simulates when the dice is rolled (or not)'''
 
         rolled = self.dice.roll()
-        print '\n' + self.currentPlayer.name + ', you rolled ' + str(rolled)
+        print '\n' + self.getCurrentPlayerName() + ', you rolled ' + str(rolled)
         if rolled == 1:
             print 'You rolled a 1 so your turn is over. You lost ' + \
                 str(self.turnScore) + ' possible points.'
-            print 'Your current score is ' + str(self.currentPlayer.score) + \
+            print 'Your current score is ' + str(self.getCurrentPlayerScore()) + \
             '\n'
             self.changePlayer()
-            print 'Next up: ' + self.currentPlayer.name
+            print 'Next up: ' + self.getCurrentPlayerName()
         else:
             self.turnScore += rolled
             print 'Your score this turn is ' + str(self.turnScore)
             print 'Your overall saved score is ' + \
-            str(self.currentPlayer.score) + '\n'
+            str(self.getCurrentPlayerScore()) + '\n'
 
 
     def addToScore(self):
+        '''Adds turn score to saved score'''
         self.currentPlayer.addToScore(self.turnScore)
+
+    def getCurrentPlayerName(self):
+        '''Returns name of current player'''
+        return self.currentPlayer.name
+
+    def getCurrentPlayerScore(self):
+        '''Returns overall score of current player'''
+        return self.currentPlayer.score
+
+    def continueToPlay(self):
+        '''Checks if score is under 100 to continue or not'''
+        if self.getCurrentPlayerScore() >= 100:
+            return False
+        else:
+            return True
+
+    def nextTurn(self):
+        '''Takes in answer from player ask def
+        Either rolls dice again or holds'''
+
+        if self.ask()[0].lower() == 'r':
+            self.turn()
+        else:
+            self.addToScore()
+            print'You decided to keep {0}\n'.format(self.getCurrentPlayerScore())
+            if self.continueToPlay():
+                self.changePlayer()
+                print 'Next up: ' + self.getCurrentPlayerName()
+                print 'Your current score: ' + str(self.getCurrentPlayerScore())
+
+
+class TimedGameProxy(Game):
+    def __init__(self, players=[]):
+        self.start = time.time()
+        self.timed = 60
+        self.game = Game(players)
+
+
+    def nextTurn(self):
+        return self.game.nextTurn()
+
+    def continueToPlay(self):
+        '''Check time to see if you keep going'''
+
+        # check that scores are under 100
+        if self.game.currentPlayer.score > 100:
+            return False
+        # time check
+        timeLeft = time.time() - self.start
+        if timeLeft > self.timed:
+            # determine winner
+            if self.game.players[0].score > self.game.players[1].score:
+                self.game.currentPlayer = self.game.players[0]
+            else:
+                self.game.currentPlayer = self.game.players[1]
+            # print game over no matter what, return false so roll doesn't happen
+            print '\n Time is up! Game Over!'
+            return False
+        else:
+            timeLeftNow = round((self.timed - timeLeft), 1)
+            print 'There are {0} seconds left in the game'.format(timeLeftNow)
+            return True
+
+    def getCurrentPlayerName(self):
+        return self.game.currentPlayer.name
+
+    def getCurrentPlayerScore(self):
+        return self.game.currentPlayer.score
 
 
 def main():
     player1 = args.player1
     player2 = args.player2
     timed = args.timed
-    game = Game()
+    
+    try:
+        if timed[0].lower() == 'y':
+            game = TimedGameProxy([player1, player2])
+        else:
+            game = Game([player1, player2])
+    except:
+        game = Game([player1, player2])
 
-    print 'Up first is ' + game.currentPlayer.name
-    if timed == 'y':
+    print 'Up first is ' + game.getCurrentPlayerName()
 
-        while game.maxScore() < 100:
-            if game.ask():
-                game.turn()
-            else:
-                game.addToScore()
-                if game.currentPlayer.score >= 100:
-                    break
+    while game.continueToPlay():
+        game.nextTurn()
 
-                print'You decided to keep {0}\n'.format(game.currentPlayer.score)
-                game.changePlayer()
-                print 'Next up: ' + game.currentPlayer.name
-
-        print('''\n*******************
-            \n{0} wins with a score of {1}
-            \n*******************'''.format(
-            game.currentPlayer.name, game.currentPlayer.score))
-        sys.exit()
+    print('''\n*******************
+        \n{0} wins with a score of {1}
+        \n*******************'''.format(
+        game.getCurrentPlayerName(), game.getCurrentPlayerScore()))
+    sys.exit()
 
 main()
